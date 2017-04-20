@@ -35,7 +35,7 @@ public class BrokerUtil {
 
     public static String generateAccountName(){
         String uuid = UUID.randomUUID().toString();
-        return uuid.substring(0,18);
+        return uuid.substring(0,10);
     }
 
     public static void createLDAPUser(LdapTemplate ldapTemplate, etcdClient etcdClient, String accountName, String groupName, String gidNumber){

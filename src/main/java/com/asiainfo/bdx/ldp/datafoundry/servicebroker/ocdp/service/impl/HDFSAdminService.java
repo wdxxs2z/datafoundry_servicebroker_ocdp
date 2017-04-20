@@ -96,8 +96,9 @@ public class HDFSAdminService implements OCDPAdminService{
                 this.dfs.mkdirs(new Path(pathName), FS_PERMISSION);
                 this.dfs.setQuota(new Path(pathName), nameSpaceQuota, storageSpaceQuota);
                 logger.info("Create hdfs folder successful.");
+            } else {
+                logger.info("HDFS folder exists, not need to create again.");
             }
-            logger.info("HDFS folder exists, not need to create again.");
         }catch (Exception e){
             logger.error("Set HDFS folder quota fails due to: " + e.getLocalizedMessage());
             e.printStackTrace();

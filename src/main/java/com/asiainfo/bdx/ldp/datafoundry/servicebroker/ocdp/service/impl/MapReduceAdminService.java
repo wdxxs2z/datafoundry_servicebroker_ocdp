@@ -5,6 +5,7 @@ import com.asiainfo.bdx.ldp.datafoundry.servicebroker.ocdp.config.ClusterConfig;
 import com.asiainfo.bdx.ldp.datafoundry.servicebroker.ocdp.model.PlanMetadata;
 import com.asiainfo.bdx.ldp.datafoundry.servicebroker.ocdp.service.OCDPAdminService;
 import com.asiainfo.bdx.ldp.datafoundry.servicebroker.ocdp.service.common.YarnCommonService;
+import com.asiainfo.bdx.ldp.datafoundry.servicebroker.ocdp.utils.BrokerUtil;
 import com.google.gson.internal.LinkedTreeMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,26 +44,45 @@ public class MapReduceAdminService implements OCDPAdminService{
     }
 
     @Override
-    public String provisionResources(String serviceDefinitionId, String planId, String serviceInstanceId, String bindingId, String accountName) throws Exception {
+    public String provisionResources(String serviceDefinitionId, String planId, String serviceInstanceId,
+                                     String bindingId, String accountName) throws Exception {
         Map<String, String> quota = this.getQuotaFromPlan(serviceDefinitionId, planId);
-        String dirName = "/user/" + accountName;
-        this.hdfsAdminService.createHDFSDir(dirName, new Long(quota.get("nameSpaceQuota")), new Long(quota.get("storageSpaceQuota")) * 1000000000);
         String queueName = this.yarnCommonService.createQueue(quota.get("yarnQueueQuota"));
+        //Append random user name after username passed from DF, due to broker use space_guid as username for every provision request now
+        String dirName = "/user/" + accountName + "_" + BrokerUtil.generateAccountName();
+        this.hdfsAdminService.createHDFSDir(dirName, new Long(quota.get("nameSpaceQuota")), new Long(quota.get("storageSpaceQuota")) * 1000000000);
+        // return yarn queue name and hdfs folder, because mapreduce need both resources
         return queueName + ":" + dirName;
     }
 
     @Override
     public String assignPermissionToResources(String policyName, final List<String> resources, String accountName, String groupName) {
+        /**
+         * Temp fix:
+         * Create ranger policy to make sure current tenant can use /user/<account name> folder to store some files generate by spark or mr.
+         * For each tenant, just need only one ranger policy about this.
+         * If such policy exists, policy create will fail here.
+         */
+        List <String> hdfsFolderForJobExec = new ArrayList<String>(){
+            {
+                add("/user/" + accountName);
+            }
+        };
+        if (this.hdfsAdminService.assignPermissionToResources(accountName + "_" + policyName, hdfsFolderForJobExec, accountName, groupName) != null){
+            logger.info("Assign permissions for /user/" + accountName + " folder.");
+        }
+
         String[] resourcesList = resources.get(0).split(":");
         logger.info("Assign submit-app/admin-queue permission to yarn queue.");
         String yarnPolicyId = this.yarnCommonService.assignPermissionToQueue(policyName, resourcesList[0], accountName, groupName);
         logger.info("Create corresponding hdfs policy for mapreduce tenant");
         List<String> hdfsFolders = new ArrayList<String>(){
             {
-                add("/user/" + accountName);
+                add(resourcesList[1]);
             }
         };
         String hdfsPolicyId = this.hdfsAdminService.assignPermissionToResources("mr_" + policyName, hdfsFolders, accountName, groupName);
+        // return yarn policy id and hive policy id, because mapreduce need both resources
         return (yarnPolicyId != null && hdfsPolicyId != null) ? yarnPolicyId + ":" + hdfsPolicyId : null;
     }
 
